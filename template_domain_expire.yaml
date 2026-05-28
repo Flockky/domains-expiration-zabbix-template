@@ -1,0 +1,72 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: af36653e02304d2e8e3900010d9d20c2
+      name: 'Наши шаблоны'
+  templates:
+    - uuid: 3e70ea552c924649876cfbaf86d79077
+      template: 'Domain name expire'
+      name: 'Срок действия доменов'
+      groups:
+        - name: 'Наши шаблоны'
+      items:
+        - uuid: 8cfd025e449242d3a8a8c93d0aef0304
+          name: 'Получение списка доменов'
+          key: 'system.run["cat /usr/lib/zabbix/externalscripts/DomainExpireList"]'
+          delay: 24h
+          value_type: TEXT
+      discovery_rules:
+        - uuid: dfe0028e063447d3ad9931fc52acdf6f
+          name: 'Обнаружение списка доменов'
+          type: DEPENDENT
+          key: Domain.name.discovery
+          item_prototypes:
+            - uuid: 51222c8ab5ed4d61b14f25382fb7da0e
+              name: 'Срок действия домена {#DOMAIN.NAME}'
+              key: 'system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}]'
+              delay: 12h
+              trends: '0'
+              units: unixtime
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - |
+                      // Получаем входящее значение
+                      var value = value;
+                      // Проверяем, что значение является числом
+                      if (!isNaN(value) && Number.isFinite(Number(value))) {
+                          var timestamp = parseInt(value);
+                          // Unix timestamp в секундах обычно от 0 до ~253402300800 (до 9999 года)
+                          if (timestamp >= 0 && timestamp <= 253402300800) {
+                              return timestamp;
+                          }
+                      }
+                      // Если значение не подходит — возвращаем 0
+                      return 0;
+              tags:
+                - tag: 'Срок действия доменов'
+              trigger_prototypes:
+                - uuid: 08a24c221dc44e759426fd6b8c8e6413
+                  expression: |
+                    last(/Domain name expire/system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}],#1) = 0 and
+                    last(/Domain name expire/system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}],#2) = 0
+                  name: 'Срок действия домена {#DOMAIN.NAME}. Не удалось получить данные'
+                  priority: HIGH
+                - uuid: 1fae7894cebe4988974870eed11f5b2c
+                  expression: 'last(/Domain name expire/system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}]) - now()<1209600'
+                  name: 'Срок действия домена {#DOMAIN.NAME} менее 14 дней'
+                  priority: HIGH
+                  dependencies:
+                    - name: 'Срок действия домена {#DOMAIN.NAME}. Не удалось получить данные'
+                      expression: |
+                        last(/Domain name expire/system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}],#1) = 0 and
+                        last(/Domain name expire/system.run[/usr/lib/zabbix/externalscripts/Getwhois.sh {#DOMAIN.NAME}],#2) = 0
+          master_item:
+            key: 'system.run["cat /usr/lib/zabbix/externalscripts/DomainExpireList"]'
+          lld_macro_paths:
+            - lld_macro: '{#DOMAIN.NAME}'
+              path: $.Domain
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'return JSON.stringify(JSON.parse(value),[''Domain'']);'
