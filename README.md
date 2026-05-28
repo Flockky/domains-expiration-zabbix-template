@@ -1,0 +1,1 @@
+# domains-expiration-zabbix-template
